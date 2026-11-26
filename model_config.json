@@ -1,0 +1,10 @@
+{
+  "catboost_iterations": 707,
+  "lightgbm_iterations": 386,
+  "catboost_weight": 0.1,
+  "lightgbm_weight": 0.9,
+  "random_seed": 42,
+  "validation_folds": 3,
+  "validation_rmsle": 0.664535100905878,
+  "target_transform": "log1p"
+}

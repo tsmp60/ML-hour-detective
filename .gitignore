@@ -1,0 +1,19 @@
+# Competition data and local prediction files: do not upload train.csv to GitHub.
+*.csv
+
+# Virtual environments and Python caches.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Local training reports / model artifacts.
+*.cbm
+*.joblib
+catboost_info/
+validation_results.json
+
+# Editor and operating-system files.
+.vscode/
+.DS_Store
+Thumbs.db
