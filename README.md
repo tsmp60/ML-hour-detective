@@ -85,14 +85,4 @@ Haggle's current first-ship guide says it places `train.csv` and hidden `test.cs
 - Haggle's first-ship guide also requires a public repository, a playable web URL, a project description, a screenshot, and tracked Hackatime hours. See <https://haggle.hackclub.com/guides/first-ship/>.
 
 ## Validation snapshot from the uploaded dataset
-
-The provided 4,500-row `train.csv` was run through the current 3-fold, duplicate-aware validation pipeline. That run produced:
-
-| Model | Out-of-fold RMSLE |
-|---|---:|
-| Median baseline | 0.96672 |
-| CatBoost | 0.67624 |
-| LightGBM | 0.66470 |
-| Weighted ensemble | **0.66454** |
-
-The selected blend for this run is 10% CatBoost and 90% LightGBM. The blend weight was selected from these same out-of-fold predictions, so the result is a useful development measurement—not an independent test score, not a public leaderboard score, and not a guarantee on Haggle's hidden test set. Re-run `python train.py` after any feature or parameter changes.
+not completed yet ;p
