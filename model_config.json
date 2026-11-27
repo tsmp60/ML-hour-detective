@@ -1,10 +1,23 @@
 {
-  "catboost_iterations": 707,
-  "lightgbm_iterations": 386,
-  "catboost_weight": 0.1,
-  "lightgbm_weight": 0.9,
+  "catboost_iterations": 1177,
+  "lightgbm_iterations": 500,
+  "lightgbm_num_leaves": 31,
+  "lightgbm_min_child_samples": 35,
+  "lightgbm_learning_rate": 0.02,
+  "lightgbm_reg_lambda": 5.0,
+  "lightgbm_reg_alpha": 0.2,
+  "lightgbm_max_bin": 127,
+  "catboost_weight": 0.25,
+  "lightgbm_weight": 0.75,
+  "lightgbm_seeds": [
+    42,
+    2027,
+    2028
+  ],
+  "catboost_seed": 42,
   "random_seed": 42,
-  "validation_folds": 3,
-  "validation_rmsle": 0.664535100905878,
-  "target_transform": "log1p"
+  "target_cap_hours": 140.7,
+  "target_transform": "log1p",
+  "validation_folds": 5,
+  "validation_method": "5_fold_stratified_group_cv_exact_duplicate_groups_fixed_development_blend"
 }

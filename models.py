@@ -1,7 +1,6 @@
-"""Model factories and metric helpers."""
+"""CPU-friendly model factories and RMSLE helpers."""
 from __future__ import annotations
 
-import os
 from typing import Iterable
 
 import numpy as np
@@ -9,66 +8,82 @@ from catboost import CatBoostRegressor
 from lightgbm import LGBMRegressor
 
 from config import (
-    CATBOOST_DEFAULT_ITERATIONS,
-    LIGHTGBM_DEFAULT_ITERATIONS,
+    DEFAULT_LIGHTGBM_LEARNING_RATE,
+    DEFAULT_LIGHTGBM_MAX_BIN,
+    DEFAULT_LIGHTGBM_MIN_CHILD_SAMPLES,
+    DEFAULT_LIGHTGBM_NUM_LEAVES,
+    DEFAULT_LIGHTGBM_REG_ALPHA,
+    DEFAULT_LIGHTGBM_REG_LAMBDA,
+    MAX_TARGET_HOURS,
     MAX_THREADS,
-    RANDOM_SEED,
 )
 
 
-def thread_count() -> int:
-    return max(1, min(MAX_THREADS, os.cpu_count() or 1))
-
-
-def build_catboost(
-    iterations: int = CATBOOST_DEFAULT_ITERATIONS, seed: int = RANDOM_SEED
-) -> CatBoostRegressor:
+def build_catboost(iterations: int, seed: int) -> CatBoostRegressor:
+    """Create the selected CatBoost regressor for the log-hours target."""
     return CatBoostRegressor(
         iterations=max(100, int(iterations)),
         depth=6,
-        learning_rate=0.03,
+        learning_rate=0.025,
         loss_function="RMSE",
         eval_metric="RMSE",
-        l2_leaf_reg=8.0,
+        l2_leaf_reg=10.0,
         random_strength=0.7,
         random_seed=int(seed),
-        thread_count=thread_count(),
+        thread_count=max(1, int(MAX_THREADS)),
         allow_writing_files=False,
         verbose=False,
     )
 
 
 def build_lightgbm(
-    iterations: int = LIGHTGBM_DEFAULT_ITERATIONS, seed: int = RANDOM_SEED
+    iterations: int,
+    seed: int,
+    *,
+    num_leaves: int = DEFAULT_LIGHTGBM_NUM_LEAVES,
+    min_child_samples: int = DEFAULT_LIGHTGBM_MIN_CHILD_SAMPLES,
+    learning_rate: float = DEFAULT_LIGHTGBM_LEARNING_RATE,
+    reg_lambda: float = DEFAULT_LIGHTGBM_REG_LAMBDA,
+    reg_alpha: float = DEFAULT_LIGHTGBM_REG_ALPHA,
+    max_bin: int = DEFAULT_LIGHTGBM_MAX_BIN,
 ) -> LGBMRegressor:
+    """Create a deterministic, regularized LightGBM CPU regressor."""
+    seed = int(seed)
     return LGBMRegressor(
         objective="regression",
         n_estimators=max(100, int(iterations)),
-        learning_rate=0.02,
-        num_leaves=15,
+        learning_rate=float(learning_rate),
+        num_leaves=max(3, int(num_leaves)),
         max_depth=-1,
-        min_child_samples=25,
+        min_child_samples=max(5, int(min_child_samples)),
         subsample=0.85,
         subsample_freq=1,
         colsample_bytree=0.85,
-        reg_lambda=3.0,
-        reg_alpha=0.1,
-        random_state=int(seed),
-        n_jobs=thread_count(),
+        reg_lambda=float(reg_lambda),
+        reg_alpha=float(reg_alpha),
+        max_bin=max(31, int(max_bin)),
+        random_state=seed,
+        bagging_seed=seed,
+        feature_fraction_seed=seed,
+        data_random_seed=seed,
+        deterministic=True,
+        force_col_wise=True,
+        n_jobs=max(1, int(MAX_THREADS)),
         verbosity=-1,
     )
 
 
 def rmsle_from_log(actual_log: Iterable[float], predicted_log: Iterable[float]) -> float:
-    """RMSLE when the model already predicts log1p(hours)."""
+    """Compute RMSLE when inputs are already in log1p-hours space."""
     actual = np.asarray(actual_log, dtype=float)
     predicted = np.asarray(predicted_log, dtype=float)
-    predicted = np.maximum(predicted, 0.0)  # hours cannot be negative
+    predicted = np.clip(predicted, 0.0, np.log1p(MAX_TARGET_HOURS))
     return float(np.sqrt(np.mean(np.square(actual - predicted))))
 
 
 def log_prediction_to_hours(predicted_log: Iterable[float]) -> np.ndarray:
+    """Convert log1p predictions to valid, capped hour values."""
     predicted = np.asarray(predicted_log, dtype=float)
-    predicted = np.maximum(predicted, 0.0)
+    predicted = np.clip(predicted, 0.0, np.log1p(MAX_TARGET_HOURS))
     hours = np.expm1(predicted)
-    return np.maximum(hours, 0.0)
+    return np.clip(hours, 0.0, MAX_TARGET_HOURS)

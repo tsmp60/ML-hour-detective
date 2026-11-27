@@ -1,88 +1,139 @@
 # ML — Haggle Hour Detective
 
-A tabular regression system for predicting `hours_spent` from Hack Club project metadata. The model is an ensemble of CatBoost and LightGBM regressors trained on `log1p(hours_spent)`, which directly aligns the objective with RMSLE.
+A CPU-friendly tabular regression project that predicts reviewer-approved project
+hours from the official Hour Detective training data.
 
-## Project structure
+## Quick start
 
-```text
-ML/
-├── train.csv                 # Local training data; intentionally git-ignored
-├── config.py                 # Shared model/CV settings
-├── features.py               # Leakage-safe preprocessing + engineered features
-├── models.py                 # CatBoost/LightGBM factories and metric helpers
-├── train.py                  # Group-aware cross-validation and model selection
-├── predict.py                # Haggle entry point; writes predictions.csv
-├── model_config.json         # Chosen iteration counts and ensemble weights
-├── requirements.txt
-└── README.md
-```
-
-## Important data rules
-
-- `project_id` is an identifier, not a predictive feature.
-- `hours_spent` is the target.
-- `log_hours` and `hours_bucket` are derived from the target and are explicitly excluded to prevent label leakage.
-- The training CSV is included in this local starter archive for convenience, but `*.csv` is ignored by Git. **Do not commit `train.csv` or any copy of the competition data to GitHub.**
-
-## Setup (VS Code terminal)
+Run these commands from this folder in VS Code:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate       # Windows: .venv\Scripts\activate
 python -m pip install -r requirements.txt
-```
-
-## Train and validate
-
-```bash
 python train.py
 ```
 
-The training script:
-
-1. Creates interpretable ratios from commits, code structure, assets, and README features.
-2. Keeps duplicate feature rows together using `StratifiedGroupKFold`.
-3. Trains CatBoost and LightGBM on `log1p(hours_spent)`.
-4. Reports out-of-fold RMSLE for each model and their ensemble.
-5. Selects an ensemble blend from out-of-fold predictions and writes `model_config.json`.
-6. Writes local analysis files: `validation_results.json`, `feature_importance.csv`, and `oof_predictions.csv`.
-
-Use the out-of-fold score as the local estimate. It is not a guarantee of the hidden leaderboard score.
-
-## Test the Haggle prediction interface locally
-
-After `train.py` has completed, create a temporary test file from held-out-looking rows:
+The normal training display is designed to be easy to read in a project update.
+It prints a short validation summary, not feature names, project IDs, or
+row-level predictions. For technical details, run:
 
 ```bash
-python - <<'PY'
-import pandas as pd
-train = pd.read_csv("train.csv")
-test = train.drop(columns=["hours_spent", "log_hours", "hours_bucket"]).sample(25, random_state=17)
-test.to_csv("test.csv", index=False)
-PY
+python train.py --details
+```
 
+Training writes or updates:
+
+- `model_config.json` — settings used by the submission predictor.
+- `validation_results.json` — metrics and fold summaries.
+- `VALIDATION_REPORT.md` — readable validation report.
+- `feature_importance.csv` and `oof_predictions.csv` — local diagnostics.
+
+## Model design
+
+The target is trained as `log1p(hours_spent)`. Squared error in that space is
+the RMSLE objective used by the competition for non-negative target values.
+
+The predictor uses two gradient-boosted tree families:
+
+- CatBoost learns non-linear relationships and handles categorical metadata.
+- LightGBM is the main model. Three deterministic seed runs are averaged.
+- A small 0.25 CatBoost / 0.75 LightGBM blend combines their predictions.
+
+Two ordered author fields have both their original category and an additional
+numeric ordered representation: prior approved projects and account-age band.
+This lets the trees use their natural ordering without discarding the original
+category information.
+
+## Validation
+
+`python train.py` runs five-fold `StratifiedGroupKFold` validation. Exact duplicate
+feature rows are kept in the same fold. The validation run uses the same model
+families, iteration counts, LightGBM seeds, and fixed blend weight as `predict.py`.
+No scored fold is used for early stopping. The blend weight was selected during
+model development on this training set, so the blended OOF score is a development
+diagnostic rather than an untouched estimate.
+
+The default validation output reports RMSLE, for which lower is better. It is a
+local estimate, not a Haggle leaderboard score. The hidden projects may have a
+different distribution.
+
+After training, run the end-to-end runner check:
+
+```bash
+python test_submission.py
+```
+
+This creates a separate group-aware holdout, copies the selected model settings,
+executes the actual `predict.py` entry point, and checks the output schema, IDs,
+prediction range, runtime and local holdout RMSLE. It does not replace or modify
+your original `train.csv` or rerun the five-fold validation.
+
+## Project structure
+
+```text
+ML hour detective/
+├── train.csv                 # Official training data; never publish it
+├── config.py                 # Shared paths and model settings
+├── data_utils.py             # Input validation
+├── features.py               # Feature creation and train/test alignment
+├── models.py                 # CatBoost and LightGBM factories
+├── train.py                  # Five-fold grouped validation
+├── predict.py                # Haggle's required prediction entry point
+├── test_submission.py        # End-to-end local runner check
+├── model_config.json         # Selected model settings
+├── validation_results.json   # Recorded validation and smoke-test evidence
+├── VALIDATION_REPORT.md      # Readable validation report
+├── AUDIT_REPORT.md           # Code audit and remaining risks
+├── requirements.txt
+├── README.md
+└── .gitignore
+```
+
+## Haggle runner contract
+
+Haggle puts `train.csv` and `test.csv` beside `predict.py`, then runs:
+
+```bash
 python predict.py
 ```
 
-The script should create `predictions.csv` with exactly these columns:
+The run has no internet access, is CPU-only, and must finish within 10 minutes.
+`test.csv` contains the same feature columns as `train.csv`, except for the
+three label columns: `hours_spent`, `log_hours`, and `hours_bucket`. The script
+writes `predictions.csv` with exactly these columns and one row per test row,
+in the same order:
 
 ```csv
 project_id,hours_spent
-535ce026f7,12.5
+3f9a1c0b2e,12.5
 ```
 
-The example row is illustrative. Your actual predictions will differ.
+The predictor resolves files relative to its own location, preserves IDs as
+strings, validates the input schema, clips outputs to the official 140.7-hour
+cap, and writes the prediction file atomically.
 
-## Haggle execution interface
+Haggle creates the playable page for a scored ship; you do not need to build a
+separate website. A ship still needs the public GitHub repository, README,
+description, screenshot, Hackatime project, and Lapse backup required by the
+current guide.
 
-Haggle's current first-ship guide says it places `train.csv` and hidden `test.csv` beside `predict.py`, runs `python predict.py` without internet, and reads `predictions.csv`. The required columns are `project_id,hours_spent`; the script must finish within 10 minutes. The guide says pandas, scikit-learn, XGBoost, LightGBM, and CatBoost are already installed. See <https://haggle.hackclub.com/guides/first-ship/>.
+## Rules and data integrity
 
-## Before shipping
+- Use only Haggle's supplied `train.csv`. Do not use additional datasets,
+  scraping, project-owner lookups, or other participants' code or predictions.
+- Never commit `train.csv`, `test.csv`, or generated CSVs. `.gitignore` excludes
+  `*.csv`.
+- `project_id`, `hours_spent`, `log_hours`, and `hours_bucket` are never model
+  inputs. The last two are derived from the target and would leak label data.
+- No saved model binaries are required. `predict.py` trains from the supplied
+  training file on each run.
 
-- Run `python train.py` and save the actual validation results.
-- Run the local `predict.py` smoke test and inspect `predictions.csv`.
-- Push source code and `model_config.json`, not `train.csv`, `test.csv`, or generated prediction CSVs.
-- Haggle's first-ship guide also requires a public repository, a playable web URL, a project description, a screenshot, and tracked Hackatime hours. See <https://haggle.hackclub.com/guides/first-ship/>.
+## Research references
 
-## Validation snapshot from the uploaded dataset
-not completed yet ;p
+- [Haggle Hour Detective data dictionary](https://haggle.hackclub.com/competitions/hour-detective/data/)
+- [Haggle first-ship guide and runner contract](https://haggle.hackclub.com/guides/first-ship/)
+- [Haggle competition rules](https://haggle.hackclub.com/competitions/hour-detective/rules/)
+- [CatBoost: unbiased boosting with categorical features, NeurIPS 2018](https://papers.neurips.cc/paper/7898-catboost-unbiased-boosting-with-categorical-features)
+- [LightGBM, NeurIPS 2017](https://papers.neurips.cc/paper/2017/hash/6449f44a102fde848669bdd9eb6b76fa-Abstract.html)
+- [scikit-learn grouped cross-validation](https://scikit-learn.org/stable/modules/cross_validation.html)
